@@ -19,6 +19,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import math
 import numpy as np
 import cv2
+from scipy import linalg
+
 
     
 def getFundamentalMatrixFromProjections(P1,P2):
@@ -452,4 +454,18 @@ def rectification_calculation(K1, K2, RT1, RT2, dims1=(1000, 1000), dims2=(1000,
     mapx1, mapy1 = cv2.initUndistortRectifyMap(K1, distCoeffs1, Rectify1.dot(K1), Fit1, destDims, cv2.CV_32FC1)
     mapx2, mapy2 = cv2.initUndistortRectifyMap(K2, distCoeffs2, Rectify2.dot(K2), Fit2, destDims, cv2.CV_32FC1)
     
-    
+    # compute new camera matrix
+    H1 = Fit1.dot(Rectify1)
+    H2 = Fit2.dot(Rectify2)
+    c1 = np.linalg.inv(RT1[:,:3]).dot(RT1[:,3])
+    c2 = np.linalg.inv(RT2[:,:3]).dot(RT2[:,3])
+    M0_1 = K1.dot(RT1[:,:3])
+    M0_2 = K2.dot(RT2[:,:3])
+    M1_1 = H1.dot(M0_1)
+    M1_2 = H2.dot(M0_2)
+    K1_1, R1_1 = linalg.rq(M1_1)
+    K1_2, R1_2 = linalg.rq(M1_2)
+    t1_1 = -R1_1.dot(c1)
+    t1_2 = -R1_2.dot(c2)
+
+    return K1_1, K1_2, R1_1, R1_2, t1_1, t1_2, H1, H2, mapx1, mapy1, mapx2, mapy2
