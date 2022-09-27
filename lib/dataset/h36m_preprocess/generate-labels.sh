@@ -1,0 +1,1 @@
+python generate-labels-npy-multiview.py /data1/share/dataset/human36m_multi-view/ /data1/share/dataset/human36m_multi-view/extra/una-dinosauria-data/h36m/
