@@ -4,17 +4,28 @@
 
     Usage: `python3 generate-labels-npy-multiview.py <path/to/Human3.6M-root> <path/to/una-dinosauria-data/h36m> <path/to/bboxes-Human36M-squared.npy>`
 """
-import os, sys
+import os
+import sys
 import numpy as np
 import h5py
-# from action_to_una_dinosauria import action_to_una_dinosauria
+from action_to_una_dinosauria import action_to_una_dinosauria
+
+sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), "../../.."))
+from lib.utils import rectification
+
 
 # Change this line if you want to use Mask-RCNN or SSD bounding boxes instead of H36M's "ground truth".
 BBOXES_SOURCE = 'GT'  # or 'MRCNN' or 'SSD'
 
+camera_param_idx = [2, 4]
+camera_left_index = 1
+camera_right_index = 0
+camera_left_name = '60457274'
+camera_right_name = '55011271'
 retval = {
     'subject_names': ['S1', 'S5', 'S6', 'S7', 'S8', 'S9', 'S11'],
-    'camera_names': ['54138969', '55011271', '58860488', '60457274'],
+    # 'camera_names': ['54138969', '55011271', '58860488', '60457274'],
+    'camera_names': ['55011271', '60457274'],
     'action_names': [
         'Directions-1', 'Directions-2', 'Discussion-1', 'Discussion-2',
         'Eating-1', 'Eating-2', 'Greeting-1', 'Greeting-2', 'Phoning-1',
@@ -29,7 +40,9 @@ retval['cameras'] = np.empty(
     (len(retval['subject_names']), len(retval['camera_names'])),
     dtype=[('R', np.float32, (3, 3)), ('T', np.float32, (3, 1)),
            ('t', np.float32, (3, 1)), ('K', np.float32, (3, 3)),
-           ('dist', np.float32, 5), ('H', np.float32, (3,3))])
+           ('dist', np.float32, 5), ('H', np.float32, (3, 3)),
+           ('R_1', np.float32, (3, 3)), ('T_1', np.float32, (3, 1)),
+           ('t_1', np.float32, (3, 1)), ('K_1', np.float32, (3, 3))])
 
 table_dtype = np.dtype([
     ('subject_idx', np.int8),
@@ -39,10 +52,13 @@ table_dtype = np.dtype([
     ('bbox_by_camera_tlbr', np.int16, (len(retval['camera_names']), 4))
 ])
 retval['table'] = []
+recmap={}
 
 h36m_root = sys.argv[1]
 destination_file_path = os.path.join(
-    h36m_root, "extra", f"human36m-multiview-labels-{BBOXES_SOURCE}bboxes.npy")
+    h36m_root, "extra", f"human36m-stereo-labels-{BBOXES_SOURCE}bboxes.npy")
+destination_recmap_file_path = os.path.join(
+    h36m_root, "extra", f"human36m-stereo-recmap.npy")
 una_dinosauria_root = sys.argv[2]
 cameras_params = h5py.File(os.path.join(una_dinosauria_root, 'cameras.h5'),
                            'r')
@@ -52,7 +68,7 @@ for subject_idx, subject in enumerate(retval['subject_names']):
     for camera_idx, camera in enumerate(retval['camera_names']):
         assert len(cameras_params[subject.replace('S', 'subject')]) == 4
         camera_params = cameras_params[subject.replace(
-            'S', 'subject')]['camera%d' % (camera_idx + 1)]
+            'S', 'subject')]['camera%d' % (camera_param_idx[camera_idx])]
         camera_retval = retval['cameras'][subject_idx][camera_idx]
 
         def camera_array_to_name(array):
@@ -69,17 +85,63 @@ for subject_idx, subject in enumerate(retval['subject_names']):
         camera_retval['K'][0, 0] = camera_params['f'][0]
         camera_retval['K'][1, 1] = camera_params['f'][1]
         camera_retval['K'][2, 2] = 1.0
-        print("-----------------",camera_idx, camera)
-        print("K", camera_retval['K'])
-        print("R", camera_retval['R'])
-        print("C", camera_retval['T'])
 
         camera_retval['dist'][:2] = camera_params['k'][:2, 0]
         camera_retval['dist'][2:4] = camera_params['p'][:, 0]
         camera_retval['dist'][4] = camera_params['k'][2, 0]
 
+    camera_left = retval['cameras'][subject_idx][camera_left_index]
+    camera_right = retval['cameras'][subject_idx][camera_right_index]
+
+    print("before")
+    print("left:", camera_left['K'])
+    print("right:", camera_right['K'])
+    camera_left['K'], camera_right['K'], camera_left['R'], camera_right[
+        'R'], camera_left['t'], camera_right['t'], camera_left['H'], camera_right[
+            'H'], mapx_1, mapy_1, mapx_2, mapy_2 = rectification.rectification_calculation(
+                camera_left['K'], camera_right['K'],
+                np.hstack([camera_left['R'], camera_left['t']]),
+                np.hstack([camera_right['R'], camera_right['t']]))
+    print("left:", camera_left['K'])
+    print("right:", camera_right['K'])
+    
+    recmap[subject_idx] = ([[mapx_2, mapy_2],[mapx_1, mapy_1]])
+# save recmap dict
+np.save(destination_recmap_file_path, recmap)
+
 # Fill bounding boxes
 bboxes = np.load(sys.argv[3], allow_pickle=True).item()
+bboxes_stereo = {}
+
+
+def rec_the_bbox(bbox, H1, H2):
+    '''rec the bbox
+
+    Args:
+        bbox (_type_): (bbox_right, bbox_left)
+        H1 (_type_): H_left
+        H2 (_type_): H_right
+
+    Returns:
+        _type_: _description_
+    '''
+    bbox2, bbox1 = bbox
+    p_lt_1 = np.array([bbox1[1], bbox1[0], 1])
+    p_rb_1 = np.array([bbox1[3], bbox1[2], 1])
+    p_lt_2 = np.array([bbox2[1], bbox2[0], 1])
+    p_rb_2 = np.array([bbox1[3], bbox1[2], 1])
+
+    p_lt_rec_1 = H1.dot(p_lt_1)
+    p_rb_rec_1 = H1.dot(p_rb_1)
+    p_lt_rec_2 = H2.dot(p_lt_2)
+    p_rb_rec_2 = H2.dot(p_rb_2)
+
+    top = min(p_lt_rec_1[1]/p_lt_rec_1[2], p_lt_rec_2[1]/p_lt_rec_2[2])
+    left = min(p_lt_rec_1[0]/p_lt_rec_1[2], p_lt_rec_2[0]/p_lt_rec_2[2])
+    bottom = max(p_rb_rec_1[1]/p_rb_rec_1[2], p_rb_rec_2[1]/p_rb_rec_2[2])
+    right = max(p_rb_rec_1[0]/p_lt_rec_1[2], p_rb_rec_2[0]/p_lt_rec_2[2])
+
+    return [top, left, bottom, right]
 
 
 def square_the_bbox(bbox):
@@ -99,11 +161,33 @@ def square_the_bbox(bbox):
     return top, left, bottom, right
 
 
+# for subject in bboxes.keys():
+#     for action in bboxes[subject].keys():
+#         for camera, bbox_array in bboxes[subject][action].items():
+#             for frame_idx, bbox in enumerate(bbox_array):
+#                 bbox[:] = square_the_bbox(bbox)
+
 for subject in bboxes.keys():
+    subject_idx = 0
+    for idx, subject_name in enumerate(retval['subject_names']):
+        if subject_name == subject:
+            subject_idx = idx
+    H_left = retval['cameras'][subject_idx][camera_left_index]['H']
+    H_right = retval['cameras'][subject_idx][camera_right_index]['H']
+    bboxes_stereo_subject = {}
     for action in bboxes[subject].keys():
         for camera, bbox_array in bboxes[subject][action].items():
-            for frame_idx, bbox in enumerate(bbox_array):
-                bbox[:] = square_the_bbox(bbox)
+            if camera == camera_left_name:
+                bboxes_left = bbox_array.reshape(-1,1,4)
+            elif camera == camera_right_name:
+                bboxes_right = bbox_array.reshape(-1,1,4)
+        bbox_stereo = np.concatenate((bboxes_right, bboxes_left), axis=1)
+        for frame_idx, bbox in enumerate(bbox_stereo):
+            bbox[:] = rec_the_bbox(bbox, H_left, H_right)
+            bbox[:] = square_the_bbox(bbox[0])
+        bboxes_stereo_subject[action] = bbox_stereo
+    bboxes_stereo[subject] = bboxes_stereo_subject
+
 
 if BBOXES_SOURCE is not 'GT':
 
@@ -211,7 +295,7 @@ for subject_idx, subject in enumerate(retval['subject_names']):
 
             for bbox, frame_idx in zip(table_segment['bbox_by_camera_tlbr'],
                                        frame_idxs):
-                bbox[camera_idx] = bboxes[subject][action][camera][frame_idx]
+                bbox[camera_idx] = bboxes_stereo[subject][action][frame_idx][camera_idx]
 
         retval['table'].append(table_segment)
 

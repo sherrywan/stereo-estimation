@@ -19,7 +19,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import math
 import numpy as np
 import cv2
-from scipy import linalg
+from scipy import linalg as lg
 
 
     
@@ -424,6 +424,11 @@ def rectification_calculation(K1, K2, RT1, RT2, dims1=(1000, 1000), dims2=(1000,
         RT2 (float32): right camera extrinsic matrix
         dims1 (tuple, optional): left image shape (width, height). Defaults to (1000, 1000).
         dims2 (tuple, optional): right image shape (width, height). Defaults to (1000, 1000).
+
+    Returns:
+        K1_1, K1_2, R1_1, R1_2, t1_1, t1_2: new camera matrix
+        H1, H2: rectification homographies
+        mapx1, mapy1, mapx2, mapy2: pixel map
     '''
     # Empty because we're using digitally acquired images (no lens distortion).
     # See OpenCV distortion parameters for help.
@@ -431,7 +436,7 @@ def rectification_calculation(K1, K2, RT1, RT2, dims1=(1000, 1000), dims2=(1000,
     distCoeffs2 = np.array([])
     
     # 3x4 camera projection matrices
-    Po1 = K1.dot(RT1)                               
+    Po1 = K1.dot(RT1)                             
     Po2 = K2.dot(RT2)
 
     # Fundamental matrix F is usually known from calibration, alternatively
@@ -455,17 +460,40 @@ def rectification_calculation(K1, K2, RT1, RT2, dims1=(1000, 1000), dims2=(1000,
     mapx2, mapy2 = cv2.initUndistortRectifyMap(K2, distCoeffs2, Rectify2.dot(K2), Fit2, destDims, cv2.CV_32FC1)
     
     # compute new camera matrix
-    H1 = Fit1.dot(Rectify1)
-    H2 = Fit2.dot(Rectify2)
+    H1 = Rectify1
+    H2 = Rectify2
+    # H1 = Fit1.dot(Rectify1)
+    # H2 = Fit2.dot(Rectify2)
     c1 = np.linalg.inv(RT1[:,:3]).dot(RT1[:,3])
     c2 = np.linalg.inv(RT2[:,:3]).dot(RT2[:,3])
     M0_1 = K1.dot(RT1[:,:3])
     M0_2 = K2.dot(RT2[:,:3])
     M1_1 = H1.dot(M0_1)
     M1_2 = H2.dot(M0_2)
-    K1_1, R1_1 = linalg.rq(M1_1)
-    K1_2, R1_2 = linalg.rq(M1_2)
-    t1_1 = -R1_1.dot(c1)
-    t1_2 = -R1_2.dot(c2)
-
+    K1_1, R1_1 = lg.rq(M1_1)
+    K1_2, R1_2 = lg.rq(M1_2)
+    t1_1 = R1_1.dot(c1)
+    t1_2 = R1_2.dot(c2)
+    t1_1 = t1_1.reshape(3,1)
+    t1_2 = t1_2.reshape(3,1)
+    
     return K1_1, K1_2, R1_1, R1_2, t1_1, t1_2, H1, H2, mapx1, mapy1, mapx2, mapy2
+
+def rectification_transform(img1, img2, mapx1, mapy1, mapx2, mapy2):
+    '''_summary_
+
+    Args:
+        img1 (_type_): left image
+        img2 (_type_): right image
+        mapx1 (_type_): left map location
+        mapy1 (_type_): left map location
+        mapx2 (_type_): right map location
+        mapy2 (_type_): righ map location
+    Returns:
+        img1_rect, img2_rect: images after rectification
+    '''
+    # Apply final transformation to images 
+    img1_rect = cv2.remap(img1, mapx1, mapy1, interpolation=cv2.INTER_LINEAR);
+    img2_rect = cv2.remap(img2, mapx2, mapy2, interpolation=cv2.INTER_LINEAR);
+
+    return img1_rect, img2_rect

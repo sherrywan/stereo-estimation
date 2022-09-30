@@ -1,0 +1,2 @@
+python rectificate-undistort-h36m.py /data1/share/dataset/human36m_multi-view/ /data1/share/dataset/human36m_multi-view/extra/human36m-stereo-labels-GTbboxes.npy /data1/share/dataset/human36m_multi-view/extra/human36m-stereo-recmap.npy 10
+            
