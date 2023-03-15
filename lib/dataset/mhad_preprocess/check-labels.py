@@ -2,9 +2,9 @@
 Author: sherrywaan sherrywaan@outlook.com
 Date: 2023-03-15 13:37:12
 LastEditors: sherrywaan sherrywaan@outlook.com
-LastEditTime: 2023-03-15 14:16:26
+LastEditTime: 2023-03-15 14:46:25
 FilePath: /wxy/3d_pose/stereo-estimation/lib/dataset/mhad_preprocess/check-labels.py
-Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+Description: check keypoints_2d, bbox in label.npy
 '''
 
 import numpy as np
