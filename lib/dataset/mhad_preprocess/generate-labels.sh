@@ -1,0 +1,1 @@
+python generate-stereo-labels.py /data1/share/dataset/MHAD_Berkeley/stereo_camera/ s '1'
