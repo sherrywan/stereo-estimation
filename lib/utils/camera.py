@@ -1,3 +1,11 @@
+'''
+Author: sherrywaan sherrywaan@outlook.com
+Date: 2022-09-28 15:24:31
+LastEditors: sherrywaan sherrywaan@outlook.com
+LastEditTime: 2023-03-28 20:53:19
+FilePath: /wxy/3d_pose/stereo-estimation/lib/utils/camera.py
+Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+'''
 import numpy as np
 # import torch
 
@@ -65,7 +73,11 @@ class Camera:
     @property
     def getR(self):
         return self.R
-
+    
+    @property
+    def gett(self):
+        return self.t
+    
     @property
     def getK(self):
         return self.K

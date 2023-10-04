@@ -7,7 +7,7 @@ import numpy as np
 
 from math import pi
 from scipy.special import logsumexp
-from torch.jit import script_if_tracing
+# from torch.jit import script_if_tracing
 
 
 class GaussianMixture(torch.nn.Module):

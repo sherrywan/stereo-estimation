@@ -1,0 +1,1 @@
+python generate-bboxes-yolo.py /data1/share/dataset/human36m_multi-view/ /data0/wxy/PD/yolov5_for_pd/det_model/pt/

@@ -27,6 +27,9 @@ CONNECTIVITY_DICT = {
     "human36m": [(0, 1), (1, 2), (2, 6), (5, 4), (4, 3), (3, 6),
                  (6, 7), (7, 8), (8, 16), (9, 16), (8, 12), (11, 12), (10, 11),
                  (8, 13), (13, 14), (14, 15)],
+    "mhad": [(0, 1), (1, 2), (2, 6), (5, 4), (4, 3), (3, 6),
+                 (6, 7), (7, 8), (8, 16), (9, 16), (8, 12), (11, 12), (10, 11),
+                 (8, 13), (13, 14), (14, 15)],
     "kth": [(0, 1), (1, 2), (5, 4), (4, 3), (6, 7), (7, 8), (11, 10), (10, 9),
             (2, 3), (3, 9), (2, 8), (9, 12), (8, 12), (12, 13)],
 }
@@ -51,6 +54,24 @@ COLOR_DICT = {
         (153, 0, 0)  # body
     ],
     'human36m': [
+        (0, 153, 102),
+        (0, 153, 153),
+        (0, 153, 153),  # right leg
+        (0, 51, 153),
+        (0, 0, 153),
+        (0, 0, 153),  # left leg
+        (153, 0, 0),
+        (153, 0, 0),  # body
+        (153, 0, 102),
+        (153, 0, 102),  # head
+        (153, 153, 0),
+        (153, 153, 0),
+        (153, 102, 0),  # right arm
+        (0, 153, 0),
+        (0, 153, 0),
+        (51, 153, 0)  # left arm
+    ],
+    'mhad': [
         (0, 153, 102),
         (0, 153, 153),
         (0, 153, 153),  # right leg
@@ -270,7 +291,10 @@ def visualize_batch_cv2(images_batch,
 
     n_views, n_joints = images_batch.shape[1], images_batch.shape[2]
 
-    n_rows = 3
+    n_rows = 1
+
+    n_rows = n_rows + 1 if keypoints_3d_batch_gt is not None else n_rows
+    n_rows = n_rows + 1 if keypoints_3d_batch_pred is not None else n_rows
     n_rows = n_rows + 1 if keypoints_2d_batch is not None else n_rows
     n_rows = n_rows + 1 if cuboids_batch is not None else n_rows
     n_rows = n_rows + 1 if confidences_batch is not None else n_rows
@@ -292,6 +316,7 @@ def visualize_batch_cv2(images_batch,
     images = images[..., ::-1]  # bgr -> rgb
 
     for view_i in range(n_cols):
+        axes[row_i][view_i].axis('off')
         axes[row_i][view_i].imshow(images[view_i])
     row_i += 1
 
@@ -312,28 +337,30 @@ def visualize_batch_cv2(images_batch,
         row_i += 1
 
     # 2D keypoints (gt projected)
-    axes[row_i, 0].set_ylabel("2d keypoints (gt projected)", size='large')
+    if keypoints_3d_batch_gt is not None:
+        axes[row_i, 0].set_ylabel("2d keypoints (gt projected)", size='large')
 
-    for view_i in range(n_cols):
-        axes[row_i][view_i].imshow(images[view_i])
-        keypoints_2d_gt_proj = project_3d_points_to_image_plane_without_distortion(
-            proj_matricies_batch[batch_index, view_i].detach().cpu().numpy(),
-            keypoints_3d_batch_gt[batch_index].detach().cpu().numpy())
-        draw_2d_pose(keypoints_2d_gt_proj, axes[row_i][view_i], kind=kind)
-    row_i += 1
+        for view_i in range(n_cols):
+            axes[row_i][view_i].imshow(images[view_i])
+            keypoints_2d_gt_proj = project_3d_points_to_image_plane_without_distortion(
+                proj_matricies_batch[batch_index, view_i].detach().cpu().numpy(),
+                keypoints_3d_batch_gt[batch_index].detach().cpu().numpy())
+            draw_2d_pose(keypoints_2d_gt_proj, axes[row_i][view_i], kind=kind)
+        row_i += 1
 
     # 2D keypoints (pred projected)
-    axes[row_i, 0].set_ylabel("2d keypoints (pred projected)", size='large')
+    if keypoints_3d_batch_pred is not None:
+        axes[row_i, 0].set_ylabel("2d keypoints (pred projected)", size='large')
 
-    for view_i in range(n_cols):
-        axes[row_i][view_i].imshow(images[view_i])
-        keypoints_2d_pred_proj = project_3d_points_to_image_plane_without_distortion(
-            proj_matricies_batch[batch_index, view_i].detach().cpu().numpy(),
-            keypoints_3d_batch_pred[batch_index].detach().cpu().numpy())
-        draw_2d_pose(keypoints_2d_pred_proj,
-                     axes[row_i][view_i],
-                     kind=pred_kind)
-    row_i += 1
+        for view_i in range(n_cols):
+            axes[row_i][view_i].imshow(images[view_i])
+            keypoints_2d_pred_proj = project_3d_points_to_image_plane_without_distortion(
+                proj_matricies_batch[batch_index, view_i].detach().cpu().numpy(),
+                keypoints_3d_batch_pred[batch_index].detach().cpu().numpy())
+            draw_2d_pose(keypoints_2d_pred_proj,
+                        axes[row_i][view_i],
+                        kind=pred_kind)
+        row_i += 1
 
     # 2D keypoints (pred projected 1)
     if keypoints_3d_batch_pred_1 is not None:
@@ -561,13 +588,140 @@ def visualize_heatmaps(images_batch,
                 axes[row, col].imshow(heatmaps[row, col - 1], alpha=0.5)
 
     fig.tight_layout()
+    fig_image = fig_to_array(fig)
 
-    # fig_image = fig_to_array(fig)
-    fig_image = fig2data(fig)
-    fig_image = fig_image[..., ::-1]
     plt.close('all')
 
     return fig_image
+
+
+def visualize_masks(images_batch,
+                       mask_1,
+                       mask_2,
+                       mask_3,
+                       kind="cmu",
+                       batch_index=0,
+                       size=5,
+                       max_n_rows=10,
+                       max_n_cols=10,
+                       view_num=None):
+    n_views = mask_1.shape[1]
+    mask_shape = mask_1.shape[2:]
+
+    n_cols, n_rows = 4, min(n_views, max_n_rows)
+    fig, axes = plt.subplots(ncols=n_cols,
+                             nrows=n_rows,
+                             figsize=(n_cols * size, n_rows * size))
+    axes = axes.reshape(n_rows, n_cols)
+
+    # images
+    # print("images_shape:", images_batch[batch_index].shape)
+    if view_num is not None:
+        images = image_batch_to_numpy(images_batch[batch_index,
+                                                   view_num].expand(
+                                                       4, -1, -1, -1))
+        
+    else:
+        images = image_batch_to_numpy(images_batch[batch_index])
+    images = denormalize_image(images).astype(np.uint8)
+    images = images[..., ::-1]  # bgr ->
+
+    # heatmaps
+    mask_1 = to_numpy(mask_1[batch_index])
+    mask_2 = to_numpy(mask_2[batch_index])
+    mask_3 = to_numpy(mask_3[batch_index])
+
+    for row in range(n_rows):
+        axes[row, 0].set_ylabel(str(row), size='large')
+        axes[row, 0].imshow(images[row])
+        axes[row, 1].imshow(mask_1[row])
+        axes[row, 2].imshow(mask_2[row])
+        axes[row, 3].imshow(mask_3[row])
+
+    fig.tight_layout()
+
+    fig_image = fig_to_array(fig)
+
+    plt.close('all')
+
+    return fig_image
+
+
+def visualize_attns(images_batch,
+                       attns,
+                       kind="cmu",
+                       batch_index=0,
+                       size=5,
+                       max_n_rows=10,
+                       max_n_cols=20,
+                       view_num=None):
+    attns_size = len(attns)
+    attn_shape = attns[0].shape[2:]
+
+    joints_name = {
+            0 : 'rank',
+            1 : 'rkne',
+            2 : 'rhip',
+            3 : 'lank',
+            4 : 'lkne',
+            5 : 'lhip',
+            6 : 'pelvi',
+            7 : 'belly',
+            8 : 'neck',
+            9 : 'head',
+            10 : 'rshld',
+            11 : 'relb',
+            12 : 'rwri',
+            13 : 'lshld',
+            14 : 'lelb',
+            15 : 'lwri',
+            16 : 'nose'
+        }
+    jnt_name = []
+    for key in joints_name.keys():
+        jnt_name.append(joints_name[key])
+
+
+    n_cols, n_rows = 2, attns_size
+    fig, axes = plt.subplots(ncols=n_cols,
+                             nrows=n_rows,
+                             figsize=(n_cols *(size+1), n_rows * size))
+    axes = axes.reshape(n_rows, n_cols)
+
+    # images
+    # print("images_shape:", images_batch[batch_index].shape)
+    if view_num is not None:
+        images = image_batch_to_numpy(images_batch[batch_index,
+                                                   view_num].expand(
+                                                       4, -1, -1, -1))
+        
+    else:
+        images = image_batch_to_numpy(images_batch[batch_index])
+    images = denormalize_image(images).astype(np.uint8)
+    images = images[..., ::-1]  # bgr ->
+
+    # heatmaps
+    attn_np = []
+    for attn in attns:
+        attn_np.append(np.sum(to_numpy(attn[batch_index]), axis=0))
+
+    for row in range(n_rows):
+        axes[row, 0].set_ylabel(str(row), size='large')
+        axes[row, 0].axis('off')
+        axes[row, 0].imshow(images[0])
+        axes[row, 1].imshow(attn_np[row], cmap=matplotlib.colormaps['OrRd'])
+        axes[row, 1].xaxis.set_ticks(ticks=list(range(17)),labels=jnt_name, rotation=45)
+        axes[row, 1].yaxis.set_ticks(ticks=list(range(17)),labels=jnt_name)
+
+
+    fig.tight_layout()
+
+    fig_image = fig_to_array(fig)
+
+    plt.close('all')
+
+    return fig_image
+
 
 def visualize_heatmaps_T(images_batch,
                        heatmaps_batch,
@@ -671,6 +825,50 @@ def visualize_volumes(images_batch,
                     ax.set_title(joint_name)
 
                 draw_voxels(volumes[col - 1], ax, norm=True)
+
+    fig.tight_layout()
+
+    fig_image = fig2data(fig)
+    fig_image = fig_image[..., ::-1]
+
+    plt.close('all')
+
+    return fig_image
+
+
+def visualize_volumes_stereo(images_batch,
+                      volumes_batch,
+                      kind="cmu",
+                      batch_index=0,
+                      size=5,
+                      max_n_rows=10,
+                      max_n_cols=10):
+    n_views, n_joints = 1, volumes_batch.shape[1]
+
+    n_cols, n_rows = min(n_joints, max_n_cols), min(n_views, max_n_rows)
+    fig = plt.figure(figsize=(n_cols * size, n_rows * size))
+
+    # images
+    images = image_batch_to_numpy(images_batch[batch_index])
+    images = denormalize_image(images).astype(np.uint8)
+    images = images[..., ::-1]  # bgr ->
+
+    # heatmaps
+    volumes = to_numpy(volumes_batch[batch_index])
+
+    for row in range(n_rows):
+        for col in range(n_cols):
+            ax = fig.add_subplot(n_rows,
+                                    n_cols,
+                                    row * n_cols + col + 1,
+                                    projection='3d')
+
+            if row == 0:
+                joint_name = JOINT_NAMES_DICT[kind][
+                    col - 1] if kind in JOINT_NAMES_DICT else str(col - 1)
+                ax.set_title(joint_name)
+
+            draw_voxels(volumes[col], ax, norm=True)
 
     fig.tight_layout()
 
@@ -1028,83 +1226,63 @@ def point3d(ax, theta1, theta2, loc, color, label_name=None):
     y = loc[:, 2]
     z = loc[:, 1]
     # points
-
+    point_size=25
+    point_zorder = 10
+    line_zorder=3
+    line_width=2
     for index in range(17):
         # 区分左右
-        
         point_color = np.array([70, 70, 70]) / 255
         if index in [0, 1, 2, 10, 11, 12]:
             point_color = np.array([181, 93, 96]) / 255
         elif index in [3, 4, 5, 13, 14, 15]:
             point_color = np.array([89, 117, 164]) / 255
-        # points = ax.scatter(xs=x[index],    # x 轴坐标
-        #                     ys=z[index],    # y 轴坐标
-        #                     zs=y[index],    # z 轴坐标
-        #                     zdir='z',    #
-        #                     c= point_color,    # color
-        #                     s=25,    # size
-        #                     linewidths=2,
-        #                     edgecolors=np.array([70,70,70])/255,
-        #                     label=label_name,
-        #                     zorder=2
-        #                     )
 
         # 区分真值和预测
         if label_name=="gt":
             point_color = np.array([200, 200, 200]) / 255
-        # if label_name is not None:
-        #     point_color=color
+            point_size = 15
+            point_zorder=2
+
         points = ax.scatter(
             xs=x[index],  # x 轴坐标
             ys=z[index],  # y 轴坐标
             zs=y[index],  # z 轴坐标
             zdir='z',  #
             c=point_color,  # color
-            s=25,  # size
+            s=point_size,  # size
             label=label_name,
-            zorder=2)
-
+            zorder=point_zorder)
+    point_size=25
+    point_zorder = 10
+    line_zorder=3
+    line_width=2
     # 绘制骨骼连线
     for i in range(5):
         skeleton_index = skeleton_index_human36[i]
         part_index_num = len(skeleton_index)
         # 区分gt pred
-        # skeleton_color = color
         # 区分左右
         skeleton_color = np.array([70, 70, 70]) / 255
         if label_name == 'gt':
             skeleton_color = np.array([200, 200, 200]) / 255
-        # if i == 0 or i == 3:
-        #     skeleton_color = 'green'
-        # elif i == 1 or i == 4:
-        #     skeleton_color = 'yellow'
-        # if i == 2:
-        #     id1, id2, id3, id4, id5 = skeleton_index_human36[i]
-        # id1, id2, id3, id4 = skeleton_index_human36[i]
+            line_zorder=1
+            line_width=1
+
         for j in range(part_index_num - 1):
             id1 = skeleton_index[j]
             id2 = skeleton_index[j + 1]
             ax.plot((x[id1], x[id2]), (z[id1], z[id2]), (y[id1], y[id2]),
                     color=skeleton_color,
-                    lw=2,
-                    zorder=1)
+                    lw=line_width,
+                    zorder=line_zorder)
 
-    # extents = np.array([getattr(ax, 'get_{}lim'.format(dim))() for dim in 'xyz'])
-    # sz = extents[:, 1] - extents[:, 0]
-    # centers = np.mean(extents, axis=1)
-    # maxsize = max(abs(sz))
-    # r = sz/2
-    # axis_min = centers - r
-    # axis_max = centers + r
-    # ax.auto_scale_xyz(*np.column_stack((axis_min, axis_max)))
-    # ax.xaxis.set_major_locator(MultipleLocator(200))
-    # ax.yaxis.set_major_locator(MultipleLocator(200))
-    # ax.zaxis.set_major_locator(MultipleLocator(200))
+
     x_range = max(abs(min(x)), abs(max(x)))
-    z_range = max(abs(min(z)), abs(max(z)))
-    ax.set_xlim(-x_range - 50, x_range + 50)
-    ax.set_ylim(-z_range - 50, z_range + 50)
-    ax.set_zlim(min(y), max(y) + 100)
+    y_range = max(abs(min(z)), abs(max(z)))
+    ax.set_xlim(-x_range - 80, x_range + 80)
+    ax.set_ylim(-y_range - 50, y_range + 50)
+    ax.set_zlim(min(y) - 50, max(y) + 50)
 
     # 调整视角
     ax.view_init(
@@ -1117,13 +1295,6 @@ def draw_3d_pose_in_two_views(axes,
                               keypoints_3d_gt=None,
                               keypoints_3d_pred=None,
                               keypoints_3d_psm=None):
-    #keypoints_3d: numpy with shape(1,njoints,3)
-    # x_min = np.min(keypoints_3d_pred[:,:,0])
-    # y_min = np.min(keypoints_3d_pred[:,:,2])
-    # z_min = np.min(keypoints_3d_pred[:,:,1])
-    # x_max = np.max(keypoints_3d_pred[:,:,0])
-    # y_max = np.max(keypoints_3d_pred[:,:,2])
-    # z_max = np.max(keypoints_3d_pred[:,:,1])
     paints = ['red', 'blue', 'green']
 
     ax0 = axes[0]
@@ -1131,10 +1302,6 @@ def draw_3d_pose_in_two_views(axes,
         xlabel='X',
         ylabel='Z',
         zlabel='Y',
-        #    xlim=(-400, 500),
-        #    zlim=(-800, 800),
-        #    xticks=np.arange(-400, 500, 200),
-        #    zticks=np.arange(-800, 800, 200),
     )
     # ax0.set_xticks([])
     # ax0.set_yticks([])

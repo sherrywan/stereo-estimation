@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from lib.utils.img import to_numpy, to_torch
-from lib.utils import multiview
+from lib.utils import multiview, transform
 import cv2
 
 
@@ -91,7 +91,8 @@ def integrate_tensor_3d(volumes, softmax=True):
 def integrate_tensor_3d_with_coordinates(volumes,
                                          coord_volumes,
                                          softmax=True,
-                                         argmax=False):
+                                         argmax=False,
+                                         summax=False):
     batch_size, n_volumes, x_size, y_size, z_size = volumes.shape
 
     volumes = volumes.reshape((batch_size, n_volumes, -1))
@@ -108,11 +109,13 @@ def integrate_tensor_3d_with_coordinates(volumes,
         volumes = res
     elif softmax:
         volumes = nn.functional.softmax(volumes, dim=2)
+    elif summax:
+        volumes = volumes / (torch.sum(volumes, dim=2, keepdim=True) + 1e-9)
     else:
-        volumes = nn.functional.relu(volumes)
+        volumes = volumes
 
     volumes = volumes.reshape((batch_size, n_volumes, x_size, y_size, z_size))
-    coordinates = torch.einsum("bnxyz, bxyzc -> bnc", volumes, coord_volumes)
+    coordinates = torch.einsum("bnxyz, xyzc -> bnc", volumes, coord_volumes)
 
     return coordinates, volumes
 
@@ -230,6 +233,111 @@ def unproject_heatmaps(heatmaps,
                 volume_aggregation_method))
 
     return volume_batch
+
+
+def unproject_stereo_heatmap(stereo_heatmaps,
+                             K_l,
+                             K_r,
+                             T_l,
+                             T_r,
+                             center_position,
+                             image_shape,
+                             min_dis,
+                             coord_volumes,
+                             vol_keypoints_3d,
+                             keypoints_2d_l,
+                             keypoints_2d_r):
+    device = stereo_heatmaps.device
+    batch_size, n_joints, heatmap_shape = stereo_heatmaps.shape[
+        0], stereo_heatmaps.shape[1], tuple(stereo_heatmaps.shape[2:])
+    volume_shape = coord_volumes.shape[:3]
+
+    volume_batch = torch.zeros(batch_size,
+                               n_joints,
+                               *volume_shape,
+                               device=device)
+
+    for batch_i in range(batch_size):
+        grid_coord = coord_volumes.reshape((-1, 3)) + center_position[batch_i]
+
+        stereo_heatmap = stereo_heatmaps[batch_i]
+        stereo_heatmap = stereo_heatmap.unsqueeze(0)
+
+        grid_coord_proj = transform.space_trans_to_stereo(K_l[batch_i], K_r[batch_i],
+                                                          T_l[batch_i], T_r[batch_i],
+                                                          grid_coord,
+                                                          keypoints_2d_l[batch_i],
+                                                          keypoints_2d_r[batch_i])
+
+        # tranform to stereo heatmap scale
+        grid_coord_proj_transformed_1 = torch.zeros_like(grid_coord_proj)
+        grid_coord_proj_transformed_1[:, 0] = grid_coord_proj[:, 0] / (image_shape[1]/ heatmap_shape[2])
+        grid_coord_proj_transformed_1[:, 1] = grid_coord_proj[:, 1] / (image_shape[0]/ heatmap_shape[1])
+        grid_coord_proj_transformed_1[:, 2] = grid_coord_proj[:, 2] / (image_shape[1]/ heatmap_shape[2]) - (min_dis)
+        grid_coord_proj = grid_coord_proj_transformed_1
+
+        # transform to [-1.0, 1.0] range
+        grid_coord_proj_ununi = grid_coord_proj.clone()
+        grid_coord_proj_transformed_2 = torch.zeros_like(grid_coord_proj)
+        grid_coord_proj_transformed_2[:, 0] = 2 * (
+            grid_coord_proj[:, 0] / (heatmap_shape[2]-1) - 0.5)
+        grid_coord_proj_transformed_2[:, 1] = 2 * (
+            grid_coord_proj[:, 1] / (heatmap_shape[1]-1) - 0.5)
+        grid_coord_proj_transformed_2[:, 2] = 2 * (
+            grid_coord_proj[:, 2] / (heatmap_shape[0]-1) - 0.5)
+        grid_coord_proj = grid_coord_proj_transformed_2
+        grid_coord_proj = grid_coord_proj.reshape(*volume_shape,3).unsqueeze(0)
+        try:
+            # print(heatmap, grid_coord_proj)
+            current_volume = F.grid_sample(stereo_heatmap,
+                                           grid_coord_proj,
+                                           mode='nearest',
+                                           padding_mode = 'border',
+                                           align_corners=True)
+        except TypeError:  # old PyTorch
+            current_volume = F.grid_sample(stereo_heatmap, grid_coord_proj)
+
+        # reshape back to volume
+        current_volume = current_volume.view(n_joints, *volume_shape)
+
+        volume_batch[batch_i] = current_volume
+
+    return volume_batch
+
+
+def gaussian_3d_relative_heatmap(keypoints_3d,
+                             center_position,
+                             coord_volumes,
+                             std,
+                             temparature=1):
+    '''generate the 3d heatmap conditioned by the coord volume center position according to keypoints_3d
+
+    keypoints_3d: 3d keypoints with shape(N,K,3)
+    center_position: 3d volume center localization with shape (N,3)
+    coord_volumes: 3d coordinate volumes with size from config and shape (64,64,64)
+    std: 3d distance std of gaussian 
+
+    '''
+    device = keypoints_3d.device
+    batch_size, n_joints = keypoints_3d.shape[0], keypoints_3d.shape[1]
+    volume_shape = coord_volumes.shape[:3]
+
+    heatmap_batch = torch.zeros(batch_size,
+                               n_joints,
+                               *volume_shape,
+                               device=device)
+
+    for batch_i in range(batch_size):
+        grid_coord = coord_volumes.reshape((-1, 3)) + center_position[batch_i]
+        
+        for joint_i in range(n_joints):
+            joint_3d = keypoints_3d[batch_i, joint_i].reshape(1,3)
+
+            grid_coord_joint_dis = torch.sqrt(torch.sum((grid_coord - joint_3d)**2, dim=1))
+            heatmap_i = torch.exp(-grid_coord_joint_dis**2 / (2 * std**2))
+            heatmap_batch[batch_i, joint_i] = (heatmap_i * temparature).reshape(*volume_shape)
+
+    return heatmap_batch
 
 
 def gaussian_2d_pdf(coords, means, sigmas, normalize=True):
@@ -451,7 +559,7 @@ def create_3d_ray_coords(camera, trans_inv, grid):
     # (hw, 3) 3D points in cam coord
     coords_cam = np.concatenate((coords, multiplier * np.ones(
         (coords.shape[0], 1))),
-                                axis=1)  # array
+        axis=1)  # array
 
     coords_world = (camera['R'].T @ coords_cam.T +
                     camera['T']).T  # (hw, 3)    in world coordinate    array
@@ -468,7 +576,7 @@ def affine_transform_pts(pts, t):
 
 def trans_3d_coords(keypoints_2d_img, camera_K, camera_R, camera_T):
     ''' transform keypoints location from 2d in image to 3d in world
-    
+
     Args:
         keypoints_2d_img (tensor): (N,V,J,2) 
         camera_K (tensor): (N,V,3,3)
@@ -505,3 +613,43 @@ def trans_3d_coords(keypoints_2d_img, camera_K, camera_R, camera_T):
     # print("cam_centor:", camera_T)
 
     return keypoints_2d_world
+
+
+def refine_keypoints_by_neightbors(keypoints_3d, occlusion, json_limb):
+    batch_size, n_joints = keypoints_3d.shape[0], keypoints_3d.shape[1]
+
+    for batch_i in range(batch_size):
+        keypoint_3d = keypoints_3d[batch_i]
+        occ = occlusion[batch_i]
+        # occ index
+        occluded = np.nonzero(occ==1)
+        for occ_i in occluded[0]:
+            occ_keypoint = keypoint_3d[occ_i]
+            new_keypoints = []
+            for data in json_limb:
+                idx = data['idx']
+                name = data['name']
+                childs = data['children']
+                means = data['bones_mean']
+                stds = data['bones_std']
+                
+                # if occ_i==idx:
+                #     for child_i, child in enumerate(childs):
+                #         if child not in occluded[0]:
+                #             neighbor = keypoint_3d[child]
+                #             new_keypoints.append(neighbor - ((neighbor - occ_keypoint) / torch.norm(neighbor - occ_keypoint) * means[child_i]))
+                for child_i, child in enumerate(childs):
+                    if occ_i==child:
+                        neighbor = keypoint_3d[idx]
+                        new_keypoints.append(neighbor - ((neighbor - occ_keypoint) / torch.norm(neighbor - occ_keypoint) * means[child_i]))
+            new_i = 0
+            new_occ = torch.zeros_like(occ_keypoint)
+            for new_keypoint in new_keypoints:
+                new_i += 1
+                new_occ += new_keypoint 
+            if new_i > 0:
+                new_occ = new_occ / new_i
+                # occ_keypoint = new_occ
+                keypoint_3d[occ_i] = new_occ
+
+    return keypoints_3d

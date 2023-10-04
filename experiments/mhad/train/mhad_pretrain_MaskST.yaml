@@ -1,0 +1,143 @@
+title: "mhad_m_stereo_volume_50"
+kind: "mhad"
+vis_freq: 1000
+vis_n_elements: 1
+
+image_shape: [256, 256]
+
+opt:
+  criterion: "MPJPE"
+
+  use_volumetric_ce_loss: false
+  volumetric_ce_loss_weight: 0.01
+
+  n_objects_per_epoch: 150000
+  n_epochs: 200
+
+  batch_size: 1024
+  val_batch_size: 1024
+
+  lr: 0
+  backbone_lr: 0
+  process_features_lr: 0
+  process_features_2_lr: 0
+  volume_net_lr: 0
+  output_net_lr: 0
+  volume_net_2_lr: 0
+  output_net_2_lr: 0
+
+  scale_keypoints_3d: 0.1
+
+model:
+  name: "stereo"
+  kind: "mpii"
+  volume_net_type: "V2V_mask" # "V2V_c2f" "VH" "VHonly" "V2V"
+  volume_generation_method: "concat"
+
+  init_weights: true
+  checkpoint: "/data0/wxy/3d_pose/stereo-estimation/logs/mhad_m_stereo_volume_50_MaskST@07.08.2023-12:53:25/checkpoints/0068/refine_weights.pth"
+  
+  volume_size: 64
+  volume_multiplier: 1.0
+  volume_softmax: true
+
+  heatmap_softmax: true
+  heatmap_multiplier: 100.0
+
+  min_dis: -7
+  max_dis: 8
+  encoder_layers: 4 # 2 or 3 or 4
+  feature_layer_idx: [-1] #[-1] or [0,2,4] or [1,3]
+
+  depth_caculation_method: "tri"
+
+  train_module: "all" # "all" "coarse"
+
+  probability_propagate: False # ture or false
+
+  if_transofrmer_refine: True
+
+  backbone:
+    name: "resnet50"
+    style: "simple"
+
+    init_weights: false
+    checkpoint: "/data0/wxy/3d_pose/stereo-estimation/logs/mhad_m_stereo_volume_50_StereoTriangulationNet@16.04.2023-23:48:22/checkpoints/0021/weights.pth"
+
+    num_joints: 17
+    num_layers: 50
+
+    retrain: false
+    retrainwith2d: False
+  
+  psm:
+    volume_size_init: 16
+    volume_size_fin: 64
+    cuboid_size: 2205.0 # 2500.0 for pairwise attention
+
+    data_dir: '/data0/wxy/3d_pose/stereo-estimation/limb_volume_data'
+    skeleton_path: '/data1/share/dataset/MHAD_Berkeley/stereo_camera/extra/human36m-stereo-m-bones_train.json'
+    temperature: 10
+    vol_confidence: False
+    prob_softmax: true
+    volume_multiplier: 1.0
+    conv_tag: true
+    conv_init: true
+    volume_summax: true
+
+    use_3d_volume_loss: False
+    threed_volume_loss_weight: 1
+    heatmap_gaussion_std: 25
+    
+    use_stereo_volume_loss: False
+    stereo_volume_loss_weight: 1
+  
+  transformer_refine:
+    relative_pose: True
+    head_nums: 8
+    depth_nums: 16
+    embed_dim: 128
+    init_weights: True
+    checkpoint: "/data0/wxy/3d_pose/stereo-estimation/logs/mhad_m_stereo_volume_50_MaskST_2@11.09.2023-21:53:42/checkpoints/0020/refine_weights.pth"
+    lr: 0.0001
+
+postprocess:
+  json_file: "/data1/share/dataset/MHAD_Berkeley/stereo_camera/extra/human36m-stereo-m-bones_train.json"
+
+dataset:
+  kind: "mhad"
+
+  train:
+    h36m_root: "/data1/share/dataset/human36m_multi-view/processed/"
+    h36m_labels_path: "/data1/share/dataset/human36m_multi-view/extra/human36m-multiview-labels-GTbboxes.npy"
+    mhad_root: "/data1/share/dataset/MHAD_Berkeley/stereo_camera/"
+    labels_path: "/data1/share/dataset/MHAD_Berkeley/stereo_camera/extra/mhad-stereo-m-labels-GTbboxes.npy"
+
+    scale_bbox: 1.0
+
+    shuffle: True
+    randomize_n_views: false
+    min_n_views: null
+    max_n_views: null
+    num_workers: 8
+    baseline_width: 'm'
+    with_damaged_actions: False
+
+  val:
+    h36m_root: "/data1/share/dataset/human36m_multi-view/processed/"
+    h36m_labels_path: "/data1/share/dataset/human36m_multi-view/extra/human36m-multiview-labels-GTbboxes.npy"
+    mhad_root: "/data1/share/dataset/MHAD_Berkeley/stereo_camera/"
+    labels_path: "/data1/share/dataset/MHAD_Berkeley/stereo_camera/extra/mhad-stereo-m-labels-GTbboxes.npy"
+
+    scale_bbox: 1.0
+
+    shuffle: false
+    randomize_n_views: false
+    min_n_views: null
+    max_n_views: null
+    num_workers: 8
+    baseline_width: 'm'
+    with_damaged_actions: False
+
+
+    retain_every_n_frames_in_test: 1

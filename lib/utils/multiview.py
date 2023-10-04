@@ -1,6 +1,5 @@
 import numpy as np
 import torch
-from yaml.events import NodeEvent
 from lib.utils import pose_normalization
 
 

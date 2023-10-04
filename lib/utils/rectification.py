@@ -453,6 +453,8 @@ def rectification_calculation(K1, K2, RT1, RT2, dims1=(1000, 1000), dims2=(1000,
     # Get fitting affine transformation to fit the images into the frame
     # Affine transformations do not introduce perspective distortion
     Fit1, Fit2 = getFittingMatrices(Rectify1, Rectify2, dims1, dims2, destDims=dims1)
+    # Fit1 = np.eye(3)
+    # Fit2 = np.eye(3)
     
     # Compute maps with OpenCV considering rectifications, fitting transformations and lens distortion
     # These maps can be stored and applied to rectify any image pair of the same stereo rig
@@ -460,10 +462,10 @@ def rectification_calculation(K1, K2, RT1, RT2, dims1=(1000, 1000), dims2=(1000,
     mapx2, mapy2 = cv2.initUndistortRectifyMap(K2, distCoeffs2, Rectify2.dot(K2), Fit2, destDims, cv2.CV_32FC1)
     
     # compute new camera matrix
-    H1 = Rectify1
-    H2 = Rectify2
-    # H1 = Fit1.dot(Rectify1)
-    # H2 = Fit2.dot(Rectify2)
+    # H1 = Rectify1
+    # H2 = Rectify2
+    H1 = Fit1.dot(Rectify1)
+    H2 = Fit2.dot(Rectify2)
     c1 = np.linalg.inv(RT1[:,:3]).dot(RT1[:,3])
     c2 = np.linalg.inv(RT2[:,:3]).dot(RT2[:,3])
     M0_1 = K1.dot(RT1[:,:3])

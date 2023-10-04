@@ -5,6 +5,7 @@ from PIL import Image
 import torch
 
 IMAGENET_MEAN, IMAGENET_STD = np.array([0.485, 0.456, 0.406]), np.array([0.229, 0.224, 0.225])
+IMAGENET_MEAN_M, IMAGENET_STD_M = np.array([0.1873, 0.2628, 0.2865]), np.array([0.1204, 0.1619, 0.1722])
 
 
 def crop_image(image, bbox):
@@ -24,8 +25,38 @@ def crop_image(image, bbox):
     return np.asarray(image_pil)
 
 
-def resize_image(image, shape):
+def crop_keypoints_img(keypoints, bbox):
+    '''transform keypoints after cropping
+    Args:
+        keypoints (numpy): keypoints_2d in image shape(K,3)
+        bbox tuple of size 4: input bbox (left, upper, right, lower)
+
+    Returns:
+        transformed_keypoints (numpy): (K,3)
+    '''
+    keypoints[:,:2] = keypoints[:,:2] - np.array(bbox[:2]).reshape(1,2)
+    return keypoints
+
+def resize_image(image, shape, scale=None):
+    if scale is not None:
+        return cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
     return cv2.resize(image, (shape[1], shape[0]), interpolation=cv2.INTER_AREA)
+
+
+def resize_keypoints_img(keypoints, image_shape, new_image_shape):
+    '''resize keypoints after scaling
+    Args:
+        keypoints (numpy): keypoints_2d in image shape(K,3)
+        image_shape: original image shape (hegith, width)
+        new_image_shape: (new_height, new_width)
+
+    Returns:
+        resized_keypoints (numpy): (K,3)
+    '''
+    height, width = image_shape
+    new_height, new_width = new_image_shape
+    keypoints[:, :2] = keypoints[:, :2] * (np.array((new_width/width, new_height/height)).reshape(1,2))
+    return keypoints
 
 
 def get_square_bbox(bbox):
@@ -54,6 +85,7 @@ def get_square_bbox(bbox):
 
 
 def scale_bbox(bbox, scale):
+    # print("bbox:{}, scale:{}".format(bbox, scale))
     left, upper, right, lower = bbox
     width, height = right - left, lower - upper
 
@@ -99,7 +131,7 @@ def image_batch_to_torch(image_batch):
     return image_batch
 
 
-def normalize_image(image):
+def normalize_image(image , type = "H36"):
     """Normalizes image using ImageNet mean and std
 
     Args:
@@ -107,7 +139,11 @@ def normalize_image(image):
 
     Returns normalized_image numpy array of shape (h, w, 3): normalized image
     """
-    return (image / 255.0 - IMAGENET_MEAN) / IMAGENET_STD
+    if type == "MHAD":
+        return (image / 255.0 - IMAGENET_MEAN_M) / IMAGENET_STD_M
+    else:
+        return (image / 255.0 - IMAGENET_MEAN) / IMAGENET_STD
+    
 
 
 def denormalize_image(image):

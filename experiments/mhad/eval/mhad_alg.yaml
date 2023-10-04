@@ -1,0 +1,76 @@
+title: "mhad_m_alg"
+kind: "mhad"
+vis_freq: 1000
+vis_n_elements: 10
+
+image_shape: [256, 256]
+
+opt:
+  criterion: "MSE"
+  mse_smooth_threshold: 400
+
+  n_epochs: 9999
+
+  batch_size: 30
+  val_batch_size: 20
+
+  lr: 0.0001
+
+  scale_keypoints_3d: 0.1
+
+model:
+  name: "alg"
+
+  init_weights: false
+  checkpoint: "/data0/wxy/3d_pose/holistic-triangulation/checkpoints/weights_from_writer.pth"
+
+  use_confidences: false
+  heatmap_multiplier: 100.0
+  heatmap_softmax: true
+  use_silhouette: "nothing" # "heatmap"修正heatmap "conf-heatmap"根据heatmap修正置信度 "conf-keypoint"根据keypoint修正置信度
+
+  backbone:
+    name: "resnet50"
+    style: "simple"
+
+    init_weights: true
+    checkpoint: '/data0/wxy/3d_pose/stereo-estimation/logs/mhad_m_alg_AlgebraicTriangulationNet@26.03.2023-22:42:43/checkpoints/0001/weights.pth'
+    
+    num_joints: 17
+    num_layers: 50
+
+    retrain: true
+    retrainwith2d: false
+    lr: 0.00001
+
+dataset:
+  kind: "mhad" 
+
+  train:
+    mhad_root: "/data1/share/dataset/MHAD_Berkeley/stereo_camera/"
+    labels_path: "/data1/share/dataset/MHAD_Berkeley/stereo_camera/extra/human36m-stereo-m-labels-GTbboxes.npy"
+
+    scale_bbox: 1.0
+
+    shuffle: true
+    randomize_n_views: false
+    min_n_views: null
+    max_n_views: null
+    num_workers: 8
+    baseline_width: 'm'
+
+  val:
+    mhad_root: "/data1/share/dataset/MHAD_Berkeley/stereo_camera/"
+    labels_path: "/data1/share/dataset/MHAD_Berkeley/stereo_camera/extra/human36m-stereo-m-labels-GTbboxes.npy"
+
+    scale_bbox: 1.0
+
+    shuffle: false
+    randomize_n_views: false
+    min_n_views: null
+    max_n_views: null
+    num_workers: 8
+    baseline_width: 'm'
+
+    retain_every_n_frames_in_test: 1
+
